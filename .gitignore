@@ -123,3 +123,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Custom
+app.py
+app.*.py
+_bin/
