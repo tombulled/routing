@@ -6,7 +6,7 @@ import addict
 
 import functools
 
-from typing import List, Dict, Set, Optional
+from typing import List, Dict, Set, Optional, Callable
 import typing as t
 
 '''
@@ -217,16 +217,48 @@ class HttpRouter(Router):
         return decorator
 
 class InverseRouterMixin(object):
-    def build(self, route, path: str, method: str):
-        return HttpRequest \
-        (
-            path   = path,
-            params = addict.Dict(),
-            method = method,
-        )
+    def build(self, *args, **kwargs):
+        # return HttpRequest \
+        # (
+        #     path   = path,
+        #     params = addict.Dict(),
+        # )
+
+        return super().build(*args, **kwargs).copy(params = addict.Dict())
+
+    def route(self, *args, **kwargs):
+        super_route = super().route
+
+        def decorator(target: Optional[Callable] = None):
+            if target is None:
+                def decorator(request):
+                    def wrapper(**params):
+                        return request.copy(params = params)
+
+                    return wrapper
+
+                target = decorator
+
+            return super_route(*args, **kwargs)(target)
+
+        return decorator
 
 class InverseRouter(InverseRouterMixin, Router): pass
+    # def build(self, route, path: str):
+    #     return HttpRequest \
+    #     (
+    #         path   = path,
+    #         params = addict.Dict(),
+    #     )
+
 class InverseHttpRouter(InverseRouterMixin, HttpRouter): pass
+    # def build(self, route, path: str, method: str):
+    #     return HttpRequest \
+    #     (
+    #         path   = path,
+    #         params = addict.Dict(),
+    #         method = method,
+    #     )
 
 # class InverseHttpRouter(HttpRouter):
 #     # NOTE: Code duplication
