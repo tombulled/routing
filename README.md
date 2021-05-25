@@ -1,6 +1,8 @@
 # routing
 
-### Example: Basic Routing
+## Example: Basic Routing
+
+### Implementation:
 ```python
 import routing
 
@@ -11,7 +13,7 @@ def turn(request):
     return f'Turn: {request.params.direction}'
 ```
 
-#### Usage:
+### Usage:
 ```python
 >>> router('turn left')
 'Turn: left'
@@ -20,5 +22,78 @@ def turn(request):
 
 <br>
 
-### Example: HTTP Routing
-...
+## Example: HTTP Routing
+
+### Implementation:
+```python
+import routing
+
+router = routing.HttpRouter()
+
+@router.get('/hello/{name}')
+def foo(request):
+    return f'Hello {request.params.name}'
+```
+
+### Usage:
+```python
+>>> router('/hello/peter', method='get')
+'Hello peter'
+>>>
+```
+
+<br>
+
+## Example: Inverse Basic Routing
+
+### Implementation:
+```python
+import routing
+
+router = routing.Router()
+
+@router.route('turn {direction}')
+def turn(request):
+    return lambda direction: request.copy \
+    (
+        params = dict \
+        (
+            direction = direction,
+        ),
+    )
+```
+
+### Usage:
+```python
+>>> router('turn {direction}')('right')
+Request(path='turn {direction}', params={'direction': 'right'})
+>>>
+```
+
+<br>
+
+## Example: Inverse HTTP Routing
+
+### Implementation:
+```python
+import routing
+
+router = routing.InverseHttpRouter()
+
+@router.get('/hello/{name}')
+def foo(request):
+    return lambda name: request.copy \
+    (
+        params = dict \
+        (
+            name = name,
+        ),
+    )
+```
+
+### Usage:
+```python
+>>> router('/hello/{name}', method='get')('sam')
+HttpRequest(path='/hello/{name}', params={'name': 'sam'}, method='get')
+>>>
+```
