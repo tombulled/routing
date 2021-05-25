@@ -21,10 +21,22 @@ class RouterError(Exception): pass
 
 class Request(pydantic.BaseModel):
     path:   str
-    params: Optional[addict.Dict]
+    params: addict.Dict = pydantic.Field(default_factory = addict.Dict)
+
+    def copy(self, **kwargs):
+        return super().copy(update = kwargs)
+
+    def render(self) -> str:
+        return self.path.format(** self.params)
 
 class HttpRequest(Request):
     method: str
+
+class RequestScope(pydantic.BaseModel):
+    path: str
+
+class HttpRequestScope(RequestScope):
+    method: Optional[str]
 
 class Target(object):
     def __init__(self, data):
@@ -79,13 +91,16 @@ class Router(object):
     def __call__(self, path: Optional[str] = None):
         route = self.resolve(path)
 
-        request = Request \
+        request = self.build(route, path)
+
+        return route.target(request)
+
+    def build(self, route, path: str):
+        return Request \
         (
             path   = path,
             params = params if (params := route.path.parse(path)) is None else addict.Dict(params),
         )
-
-        return route.target(request)
 
     def __getattr__(self, path: str):
         if path.startswith('_'):
@@ -149,6 +164,7 @@ class HttpRoute(Route):
     def __getattr__(self, method: str):
         return getattr(self.target, method)
 
+@attr.s
 class HttpRouter(Router):
     routes: t.List[HttpRoute] = attr.ib(default=attr.Factory(list))
 
@@ -157,14 +173,22 @@ class HttpRouter(Router):
 
         route_method = route.resolve(method)
 
-        request = HttpRequest \
+        request = self.build \
+        (
+            route,
+            path   = path,
+            method = method,
+        )
+
+        return route_method.target(request)
+
+    def build(self, route, path: str, method: str):
+        return HttpRequest \
         (
             path   = path,
             params = params if (params := route.path.parse(path)) is None else addict.Dict(params),
             method = method,
         )
-
-        return route_method.target(request)
 
     def __getattr__(self, method: str):
         if method.startswith('_'):
@@ -173,7 +197,7 @@ class HttpRouter(Router):
         return functools.partial(self.route, methods={method})
 
     def any(self, *paths: str):
-        return self.route(*paths, methods = {AnyPath()})
+        return self.route(*paths, methods = None)
 
     def route(self, *paths: str, methods: Optional[Set[str]] = None):
         def decorator(target: t.Any = None):
@@ -191,3 +215,37 @@ class HttpRouter(Router):
             return target
 
         return decorator
+
+class InverseRouterMixin(object):
+    def build(self, route, path: str, method: str):
+        return HttpRequest \
+        (
+            path   = path,
+            params = addict.Dict(),
+            method = method,
+        )
+
+class InverseRouter(InverseRouterMixin, Router): pass
+class InverseHttpRouter(InverseRouterMixin, HttpRouter): pass
+
+# class InverseHttpRouter(HttpRouter):
+#     # NOTE: Code duplication
+#     def build(self, route, path: str, method: str):
+#         return HttpRequest \
+#         (
+#             path   = path,
+#             params = addict.Dict(),
+#             method = method,
+#         )
+
+    # def __getattr__(self, method: str):
+    #     if method.startswith('_'):
+    #         raise AttributeError
+    #
+    #     return functools.partial(self.route, method = method)
+    #
+    # def any(self, path: str):
+    #     return self.route(path, method = None)
+    #
+    # def route(self, path: str, method: Optional[str] = None):
+    #     return super().route(path, methods = method and {method})
