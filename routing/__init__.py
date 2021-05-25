@@ -5,19 +5,13 @@ import parse
 import addict
 
 import functools
+import operator
 
 from typing import List, Dict, Set, Optional, Callable
 import typing as t
 
-'''
-TODO:
-    * Implement <Mount>
-'''
-
-class NotFound(Exception): pass
-class MethodNotAllowed(Exception): pass
-
-class RouterError(Exception): pass
+from . import errors
+from . import mixins
 
 class Request(pydantic.BaseModel):
     path:   str
@@ -32,36 +26,36 @@ class Request(pydantic.BaseModel):
 class HttpRequest(Request):
     method: str
 
-class RequestScope(pydantic.BaseModel):
-    path: str
-
-class HttpRequestScope(RequestScope):
-    method: Optional[str]
-
+@attr.s
 class Target(object):
-    def __init__(self, data):
-        self.data = data
+    data: t.Any = attr.ib(default = None)
 
-    def __call__(self, request):
+    def __call__(self, request: Request) -> t.Any:
         return self.data
 
-class Path(collections.UserString):
+class Path(str):
     def __repr__(self) -> str:
-        return f'{self.__class__.__name__}({self.data!r})'
+        return f'{self.__class__.__name__}({super().__repr__()})'
 
-    # def __hash__(self) -> str:
-    #     return hash(self.reduce())
-
-    def __eq__(self, rhs: str) -> bool:
-        return str.__eq__(self.reduce(), self.__class__.reduce(rhs))
+    def __invert__(self):
+        return self.reduce()
 
     def reduce(self) -> str:
-        parser = parse.compile(str(self))
+        return self.format(** dict.fromkeys(parse.compile(self).named_fields, str(dict())))
 
-        return self.format(** dict.fromkeys(parser.named_fields, str(dict())))
+    def parse(self, path: str, **kwargs) -> Optional[dict]:
+        return (result := parse.parse(self, path, **kwargs)) and result.named
 
-    def parse(self, path: str):
-        return (result := parse.parse(self.data, path)) and result.named
+    def matches(self, path: str, **kwargs) -> bool:
+        return self.parse(path, **kwargs) is not None
+
+    def reductively_equals(self, path: 'Path', case_sensitive: bool = True):
+        operands = map(self.__class__.reduce, (self, path))
+
+        if not case_sensitive:
+            operands = map(self.__class__.lower, operands)
+
+        return operator.eq(*operands)
 
 class AnyPath(Path):
     def __init__(self):
@@ -69,9 +63,6 @@ class AnyPath(Path):
 
     def __repr__(self) -> str:
         return 'Path(*)'
-
-    # def __hash__(self) -> str:
-    #     return hash(self.data)
 
     def __eq__(self, rhs: str) -> bool:
         return True
@@ -81,12 +72,10 @@ class Route(object):
     path:   Path = attr.ib(converter = lambda path: path if isinstance(path, Path) else Path(path))
     target: t.Callable
 
-    def matches(self, path: Optional[str]):
-        return self.path == path or (path is not None and self.path.parse(path) is not None)
-
 @attr.s
 class Router(object):
-    routes: t.List[Route] = attr.ib(default=attr.Factory(list))
+    routes:         List[Route] = attr.ib(default = attr.Factory(list))
+    case_sensitive: bool        = attr.ib(default = False)
 
     def __call__(self, path: Optional[str] = None):
         route = self.resolve(path)
@@ -99,7 +88,12 @@ class Router(object):
         return Request \
         (
             path   = path,
-            params = params if (params := route.path.parse(path)) is None else addict.Dict(params),
+            params = \
+            (
+                params
+                if (params := route.path.parse(path, case_sensitive = self.case_sensitive)) is None
+                else addict.Dict(params)
+            ),
         )
 
     def __getattr__(self, path: str):
@@ -110,10 +104,10 @@ class Router(object):
 
     def resolve(self, path: str):
         for route in self.routes:
-            if route.matches(path):
+            if route.path.matches(path, case_sensitive = self.case_sensitive):
                 return route
 
-        raise NotFound(path)
+        raise errors.NotFound(path)
 
     def route(self, *paths: str):
         def decorator(target: t.Any = None):
@@ -147,8 +141,8 @@ class HttpMethodRouter(Router):
     def resolve(self, path: str):
         try:
             return super().resolve(path)
-        except NotFound:
-            raise MethodNotAllowed(path) from None
+        except errors.NotFound:
+            raise errors.MethodNotAllowed(path) from None
 
 @attr.s
 class HttpRoute(Route):
@@ -216,68 +210,5 @@ class HttpRouter(Router):
 
         return decorator
 
-class InverseRouterMixin(object):
-    def build(self, *args, **kwargs):
-        # return HttpRequest \
-        # (
-        #     path   = path,
-        #     params = addict.Dict(),
-        # )
-
-        return super().build(*args, **kwargs).copy(params = addict.Dict())
-
-    def route(self, *args, **kwargs):
-        super_route = super().route
-
-        def decorator(target: Optional[Callable] = None):
-            if target is None:
-                def decorator(request):
-                    def wrapper(**params):
-                        return request.copy(params = params)
-
-                    return wrapper
-
-                target = decorator
-
-            return super_route(*args, **kwargs)(target)
-
-        return decorator
-
-class InverseRouter(InverseRouterMixin, Router): pass
-    # def build(self, route, path: str):
-    #     return HttpRequest \
-    #     (
-    #         path   = path,
-    #         params = addict.Dict(),
-    #     )
-
-class InverseHttpRouter(InverseRouterMixin, HttpRouter): pass
-    # def build(self, route, path: str, method: str):
-    #     return HttpRequest \
-    #     (
-    #         path   = path,
-    #         params = addict.Dict(),
-    #         method = method,
-    #     )
-
-# class InverseHttpRouter(HttpRouter):
-#     # NOTE: Code duplication
-#     def build(self, route, path: str, method: str):
-#         return HttpRequest \
-#         (
-#             path   = path,
-#             params = addict.Dict(),
-#             method = method,
-#         )
-
-    # def __getattr__(self, method: str):
-    #     if method.startswith('_'):
-    #         raise AttributeError
-    #
-    #     return functools.partial(self.route, method = method)
-    #
-    # def any(self, path: str):
-    #     return self.route(path, method = None)
-    #
-    # def route(self, path: str, method: Optional[str] = None):
-    #     return super().route(path, methods = method and {method})
+class InverseRouter(mixins.InverseRouterMixin, Router): pass
+class InverseHttpRouter(mixins.InverseRouterMixin, HttpRouter): pass
