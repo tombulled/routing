@@ -127,5 +127,6 @@ dmypy.json
 # Custom
 app.py
 app.*.py
+tst.*.py
 _.*.py
 _bin/
