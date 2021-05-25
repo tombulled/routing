@@ -1,7 +1,4 @@
-import pydantic
 import attr
-import collections
-import parse
 import addict
 
 import functools
@@ -12,19 +9,29 @@ import typing as t
 
 from . import errors
 from . import mixins
+from . import types
 
-class Request(pydantic.BaseModel):
-    path:   str
-    params: addict.Dict = pydantic.Field(default_factory = addict.Dict)
+@attr.s(kw_only = True)
+class Request(object):
+    path:   types.Path  = attr.ib(converter = lambda path: path if isinstance(path, types.Path) else types.Path(path))
+    params: addict.Dict = attr.ib(default = attr.Factory(addict.Dict))
 
     def copy(self, **kwargs):
-        return super().copy(update = kwargs)
+        return self.__class__ \
+        (
+            ** \
+            {
+                ** attr.asdict(self),
+                ** kwargs,
+            },
+        )
 
     def render(self) -> str:
         return self.path.format(** self.params)
 
+@attr.s(kw_only = True)
 class HttpRequest(Request):
-    method: str
+    method: str = attr.ib()
 
 @attr.s
 class Target(object):
@@ -33,43 +40,9 @@ class Target(object):
     def __call__(self, request: Request) -> t.Any:
         return self.data
 
-class Path(str):
-    def __repr__(self) -> str:
-        return f'{self.__class__.__name__}({super().__repr__()})'
-
-    def __invert__(self):
-        return self.reduce()
-
-    def reduce(self) -> str:
-        return self.format(** dict.fromkeys(parse.compile(self).named_fields, str(dict())))
-
-    def parse(self, path: str, **kwargs) -> Optional[dict]:
-        return (result := parse.parse(self, path, **kwargs)) and result.named
-
-    def matches(self, path: str, **kwargs) -> bool:
-        return self.parse(path, **kwargs) is not None
-
-    def reductively_equals(self, path: 'Path', case_sensitive: bool = True):
-        operands = map(self.__class__.reduce, (self, path))
-
-        if not case_sensitive:
-            operands = map(self.__class__.lower, operands)
-
-        return operator.eq(*operands)
-
-class AnyPath(Path):
-    def __init__(self):
-        super().__init__('*')
-
-    def __repr__(self) -> str:
-        return 'Path(*)'
-
-    def __eq__(self, rhs: str) -> bool:
-        return True
-
 @attr.s(auto_attribs = True)
 class Route(object):
-    path:   Path = attr.ib(converter = lambda path: path if isinstance(path, Path) else Path(path))
+    path:   types.Path = attr.ib(converter = lambda path: path if isinstance(path, types.Path) else types.Path(path))
     target: t.Callable
 
 @attr.s
@@ -153,14 +126,14 @@ class HttpRoute(Route):
 
     @property
     def any(self):
-        return self.target.route(AnyPath())
+        return self.target.route(types.AnyPath())
 
     def __getattr__(self, method: str):
         return getattr(self.target, method)
 
 @attr.s
 class HttpRouter(Router):
-    routes: t.List[HttpRoute] = attr.ib(default=attr.Factory(list))
+    routes: t.List[HttpRoute] = attr.ib(default = attr.Factory(list))
 
     def __call__(self, path: str, method: Optional[str] = None):
         route = self.resolve(path)
@@ -201,7 +174,7 @@ class HttpRouter(Router):
                     path = path,
                 )
 
-                for method in methods or (AnyPath(),):
+                for method in methods or (types.AnyPath(),):
                     route.target.route(method)(target)
 
                 self.routes.append(route)
