@@ -2,6 +2,7 @@ import pydantic
 import attr
 import collections
 import parse
+import addict
 
 import functools
 
@@ -18,12 +19,26 @@ class MethodNotAllowed(Exception): pass
 
 class RouterError(Exception): pass
 
+class Request(pydantic.BaseModel):
+    path:   str
+    params: Optional[addict.Dict]
+
+class HttpRequest(Request):
+    method: str
+
+class Target(object):
+    def __init__(self, data):
+        self.data = data
+
+    def __call__(self, request):
+        return self.data
+
 class Path(collections.UserString):
     def __repr__(self) -> str:
         return f'{self.__class__.__name__}({self.data!r})'
 
-    def __hash__(self) -> str:
-        return hash(self.reduce())
+    # def __hash__(self) -> str:
+    #     return hash(self.reduce())
 
     def __eq__(self, rhs: str) -> bool:
         return str.__eq__(self.reduce(), self.__class__.reduce(rhs))
@@ -33,6 +48,9 @@ class Path(collections.UserString):
 
         return self.format(** dict.fromkeys(parser.named_fields, str(dict())))
 
+    def parse(self, path: str):
+        return (result := parse.parse(self.data, path)) and result.named
+
 class AnyPath(Path):
     def __init__(self):
         super().__init__('*')
@@ -40,33 +58,47 @@ class AnyPath(Path):
     def __repr__(self) -> str:
         return 'Path(*)'
 
-    def __hash__(self) -> str:
-        return hash(self.data)
+    # def __hash__(self) -> str:
+    #     return hash(self.data)
 
     def __eq__(self, rhs: str) -> bool:
         return True
 
 @attr.s(auto_attribs = True)
-class BaseRoute(object):
+class Route(object):
     path:   Path = attr.ib(converter = lambda path: path if isinstance(path, Path) else Path(path))
-    target: t.Any = None
+    target: t.Callable
+
+    def matches(self, path: Optional[str]):
+        return self.path == path or (path is not None and self.path.parse(path) is not None)
 
 @attr.s
-class BaseRouter(object):
-    routes: t.List[BaseRoute] = attr.ib(default=attr.Factory(list))
+class Router(object):
+    routes: t.List[Route] = attr.ib(default=attr.Factory(list))
 
-    def __call__(self, path: str):
-        for route in self.routes:
-            if route.path == path:
-                return route.target if route.target is not None else route
+    def __call__(self, path: Optional[str] = None):
+        route = self.resolve(path)
 
-        raise NotFound(path)
+        request = Request \
+        (
+            path   = path,
+            params = params if (params := route.path.parse(path)) is None else addict.Dict(params),
+        )
+
+        return route.target(request)
 
     def __getattr__(self, path: str):
         if path.startswith('_'):
             raise AttributeError
 
         return self.route(path)
+
+    def resolve(self, path: str):
+        for route in self.routes:
+            if route.matches(path):
+                return route
+
+        raise NotFound(path)
 
     def route(self, *paths: str):
         def decorator(target: t.Any = None):
@@ -75,7 +107,7 @@ class BaseRouter(object):
                     for route in target.routes:
                         self.routes.append \
                         (
-                            BaseRoute \
+                            Route \
                             (
                                 path   = path + route.path,
                                 target = route.target,
@@ -84,7 +116,7 @@ class BaseRouter(object):
                 else:
                     self.routes.append \
                     (
-                        BaseRoute \
+                        Route \
                         (
                             path   = path,
                             target = target,
@@ -95,16 +127,17 @@ class BaseRouter(object):
 
         return decorator
 
-class MethodRouter(BaseRouter):
-    def __call__(self, path: str):
+@attr.s(auto_attribs = True)
+class HttpMethodRouter(Router):
+    def resolve(self, path: str):
         try:
-            return super().__call__(path)
+            return super().resolve(path)
         except NotFound:
             raise MethodNotAllowed(path) from None
 
 @attr.s
-class Route(BaseRoute):
-    target: MethodRouter = attr.ib(default=attr.Factory(MethodRouter))
+class HttpRoute(Route):
+    target: HttpMethodRouter = attr.ib(default=attr.Factory(HttpMethodRouter))
 
     def __call__(self, method: t.Optional[str] = None):
         return self.target(method)
@@ -116,8 +149,22 @@ class Route(BaseRoute):
     def __getattr__(self, method: str):
         return getattr(self.target, method)
 
-class Router(BaseRouter):
-    routes: t.List[Route] = attr.ib(default=attr.Factory(list))
+class HttpRouter(Router):
+    routes: t.List[HttpRoute] = attr.ib(default=attr.Factory(list))
+
+    def __call__(self, path: str, method: Optional[str] = None):
+        route = self.resolve(path)
+
+        route_method = route.resolve(method)
+
+        request = HttpRequest \
+        (
+            path   = path,
+            params = params if (params := route.path.parse(path)) is None else addict.Dict(params),
+            method = method,
+        )
+
+        return route_method.target(request)
 
     def __getattr__(self, method: str):
         if method.startswith('_'):
@@ -131,7 +178,7 @@ class Router(BaseRouter):
     def route(self, *paths: str, methods: Optional[Set[str]] = None):
         def decorator(target: t.Any = None):
             for path in paths:
-                route = Route \
+                route = HttpRoute \
                 (
                     path = path,
                 )
