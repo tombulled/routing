@@ -4,17 +4,18 @@ import addict
 import functools
 import operator
 
-from typing import List, Dict, Set, Optional, Callable
+from typing import List, Dict, Set, Optional, Callable, Union
 import typing as t
 
 from . import errors
 from . import mixins
 from . import types
+from . import middleware
 
 @attr.s(kw_only = True)
 class Request(object):
-    path:   types.Path  = attr.ib(converter = lambda path: path if isinstance(path, types.Path) else types.Path(path))
-    params: addict.Dict = attr.ib(default = attr.Factory(addict.Dict))
+    path:   types.Path  = attr.ib(converter = types.Path)
+    params: addict.Dict = attr.ib(default = attr.Factory(addict.Dict), converter = addict.Dict)
 
     def copy(self, **kwargs):
         return self.__class__ \
@@ -37,12 +38,12 @@ class HttpRequest(Request):
 class Target(object):
     data: t.Any = attr.ib(default = None)
 
-    def __call__(self, request: Request) -> t.Any:
+    def __call__(self, request: t.Optional[Request] = None) -> t.Any:
         return self.data
 
 @attr.s(auto_attribs = True)
 class Route(object):
-    path:   types.Path = attr.ib(converter = lambda path: path if isinstance(path, types.Path) else types.Path(path))
+    path:   types.Path = attr.ib(converter = types.Path)
     target: t.Callable
 
 @attr.s
@@ -50,23 +51,44 @@ class Router(object):
     routes:         List[Route] = attr.ib(default = attr.Factory(list))
     case_sensitive: bool        = attr.ib(default = False)
 
-    def __call__(self, path: Optional[str] = None):
+    # Note: Make sure doesn't collide with .middleware
+    # _middleware: List[t.Callable] = attr.ib(default = attr.Factory(list))
+    _middleware: List[t.Callable] = attr.ib(default = [middleware.parametrise])
+
+    request_class: type = attr.ib(default = Request)
+
+    def __call__(self, routable: t.Union[str, Request], **kwargs):
+
+        path = routable if isinstance(routable, str) else routable.render()
+
         route = self.resolve(path)
 
-        request = self.build(route, path)
+        request = routable if isinstance(routable, Request) else self.build(route, path, **kwargs)
 
-        return route.target(request)
+        return self.dispatch(route, request)
 
-    def build(self, route, path: str):
-        return Request \
+    def dispatch(self, route, request):
+        call_next = route.target
+
+        # Note: Should this be reversed?
+        # for middleware in reversed(self._middleware):
+        for middleware in self._middleware:
+            call_next = functools.partial(middleware, call_next = call_next)
+
+        return call_next(request)
+
+    def build(self, route, path: str, **kwargs):
+        return self.request_class \
         (
-            path   = path,
+            # path   = path,
+            path   = route.path,
             params = \
             (
                 params
                 if (params := route.path.parse(path, case_sensitive = self.case_sensitive)) is None
                 else addict.Dict(params)
             ),
+            **kwargs,
         )
 
     def __getattr__(self, path: str):
@@ -109,8 +131,22 @@ class Router(object):
 
         return decorator
 
-@attr.s(auto_attribs = True)
+    def middleware(self, func: t.Callable):
+        self._middleware.append(func)
+
+        return func
+
+@attr.s
 class HttpMethodRouter(Router):
+    _middleware: List[t.Callable] = attr.ib(default = attr.Factory(list))
+
+    def __call__(self, routable: t.Union[str, HttpRequest], **kwargs):
+        # print(routable)
+
+        method = routable if isinstance(routable, str) else routable.method
+
+        return super().__call__(method)
+
     def resolve(self, path: str):
         try:
             return super().resolve(path)
@@ -119,14 +155,14 @@ class HttpMethodRouter(Router):
 
 @attr.s
 class HttpRoute(Route):
-    target: HttpMethodRouter = attr.ib(default=attr.Factory(HttpMethodRouter))
+    target: HttpMethodRouter = attr.ib(default = attr.Factory(HttpMethodRouter))
 
     def __call__(self, method: t.Optional[str] = None):
         return self.target(method)
 
     @property
     def any(self):
-        return self.target.route(types.AnyPath())
+        return self.target.route(str(dict()))
 
     def __getattr__(self, method: str):
         return getattr(self.target, method)
@@ -135,27 +171,36 @@ class HttpRoute(Route):
 class HttpRouter(Router):
     routes: t.List[HttpRoute] = attr.ib(default = attr.Factory(list))
 
-    def __call__(self, path: str, method: Optional[str] = None):
-        route = self.resolve(path)
+    # def __call__(self, path: str, method: Optional[str] = None):
+    #     route = self.resolve(path)
+    #
+    #     route_method = route.resolve(method)
+    #
+    #     request = self.build \
+    #     (
+    #         route,
+    #         path   = path,
+    #         method = method,
+    #     )
+    #
+    #     return route_method.target(request)
 
-        route_method = route.resolve(method)
+    request_class: type = attr.ib(default = HttpRequest)
 
-        request = self.build \
-        (
-            route,
-            path   = path,
-            method = method,
-        )
+    def dispatch(self, route, request):
+        sub_route = route.target.resolve(request.method)
 
-        return route_method.target(request)
+        # print(sub_route, self._middleware)
 
-    def build(self, route, path: str, method: str):
-        return HttpRequest \
-        (
-            path   = path,
-            params = params if (params := route.path.parse(path)) is None else addict.Dict(params),
-            method = method,
-        )
+        return super().dispatch(sub_route, request)
+
+    # def build(self, route, path: str, method: str):
+    #     return HttpRequest \
+    #     (
+    #         path   = path,
+    #         params = params if (params := route.path.parse(path)) is None else addict.Dict(params),
+    #         method = method,
+    #     )
 
     def __getattr__(self, method: str):
         if method.startswith('_'):
@@ -174,7 +219,7 @@ class HttpRouter(Router):
                     path = path,
                 )
 
-                for method in methods or (types.AnyPath(),):
+                for method in methods or (str(dict()),):
                     route.target.route(method)(target)
 
                 self.routes.append(route)

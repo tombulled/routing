@@ -25,13 +25,3 @@ class Path(str):
             operands = map(self.__class__.lower, operands)
 
         return operator.eq(*operands)
-
-# class AnyPath(Path):
-#     def __init__(self):
-#         super().__init__('*')
-#
-#     def __repr__(self) -> str:
-#         return 'Path(*)'
-#
-#     def __eq__(self, rhs: str) -> bool:
-#         return True

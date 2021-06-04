@@ -9,8 +9,8 @@ import routing
 router = routing.Router()
 
 @router.route('turn {direction}')
-def turn(request):
-    return f'Turn: {request.params.direction}'
+def turn(direction: str):
+    return f'Turn: {direction}'
 ```
 
 ### Usage:
@@ -22,7 +22,7 @@ def turn(request):
 
 <br>
 
-## Example: HTTP Routing
+## Example: Basic HTTP Routing
 
 ### Implementation:
 ```python
@@ -30,15 +30,43 @@ import routing
 
 router = routing.HttpRouter()
 
-@router.get('/hello/{name}')
-def foo(request):
-    return f'Hello {request.params.name}'
+@router.post('/deposit/{amount:d}')
+def deposit(amount: int):
+    return f'Deposit: {amount}'
 ```
 
 ### Usage:
 ```python
->>> router('/hello/peter', method='get')
-'Hello peter'
+>>> router('/deposit/123', method='post')
+'Deposit: 123'
+>>>
+```
+
+<br>
+
+## Example: Advanced Routing
+
+### Implementation:
+```python
+import routing
+
+router = routing.Router()
+
+@router.middleware
+def negate(request, call_next):
+    request.params.adjective = f'not {request.params.adjective}'
+
+    return call_next(request)
+
+@router.route('declare {name} as {adjective}')
+def declare(name: str, adjective: str):
+    return f'Declaration: {name} is {adjective}'
+```
+
+### Usage:
+```python
+>>> declare('judith', 'awesome')
+'Declaration: judith is not awesome'
 >>>
 ```
 
