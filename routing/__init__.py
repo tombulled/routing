@@ -58,7 +58,6 @@ class Router(object):
     request_class: type = attr.ib(default = Request)
 
     def __call__(self, routable: t.Union[str, Request], **kwargs):
-
         path = routable if isinstance(routable, str) else routable.render()
 
         route = self.resolve(path)
@@ -141,8 +140,6 @@ class HttpMethodRouter(Router):
     _middleware: List[t.Callable] = attr.ib(default = attr.Factory(list))
 
     def __call__(self, routable: t.Union[str, HttpRequest], **kwargs):
-        # print(routable)
-
         method = routable if isinstance(routable, str) else routable.method
 
         return super().__call__(method)
@@ -189,8 +186,6 @@ class HttpRouter(Router):
 
     def dispatch(self, route, request):
         sub_route = route.target.resolve(request.method)
-
-        # print(sub_route, self._middleware)
 
         return super().dispatch(sub_route, request)
 

@@ -65,7 +65,7 @@ def declare(name: str, adjective: str):
 
 ### Usage:
 ```python
->>> declare('judith', 'awesome')
+>>> router('declare judith as awesome')
 'Declaration: judith is not awesome'
 >>>
 ```
@@ -78,7 +78,7 @@ def declare(name: str, adjective: str):
 ```python
 import routing
 
-router = routing.Router()
+router = routing.InverseRouter()
 
 router.route('turn {direction}')()
 ```
