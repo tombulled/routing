@@ -1,227 +1,224 @@
-import attr
-import addict
+import dataclasses
+import typing
+import inspect
+import itertools
+import types
 
-import functools
-import operator
+import furl
+import parse
 
-from typing import List, Dict, Set, Optional, Callable, Union
-import typing as t
+# import cassidy
+# import sentinel
+import mediate
+import label
 
 from . import errors
-from . import mixins
-from . import types
-from . import middleware
+from . import sentinels
+from . import models
 
-@attr.s(kw_only = True)
-class Request(object):
-    path:   types.Path  = attr.ib(converter = types.Path)
-    params: addict.Dict = attr.ib(default = attr.Factory(addict.Dict), converter = addict.Dict)
+# TODO: Make abstract base route class? (create protocol)
+# TODO: Implement state? Just let them define custom Router classes instead?
 
-    def copy(self, **kwargs):
-        return self.__class__ \
+Missing = object()
+
+@dataclasses.dataclass
+class Route:
+    path:   str
+    target: typing.Any = None # Make this only work for callables?
+
+    def __repr__(self) -> str:
+        return f'{type(self).__name__}({self.path!r})'
+
+    def match(self, path) -> typing.Optional[dict]:
+        result = parse.parse(self.path, path)
+
+        return result and result.named
+
+    def matches(self, path) -> bool:
+        return self.match(path) is not None
+
+class Middleware(mediate.Middleware):
+    def __call__(self, func):
+        return super().__call__(middleware(func))
+
+@dataclasses.dataclass
+class Router:
+    routes: typing.List[Route] = dataclasses.field(default_factory = list)
+    middleware: Middleware = dataclasses.field(default_factory = Middleware)
+
+    def __call__(self, uri, *args, **kwargs):
+        url = furl.furl(uri)
+        path = str(url.path)
+        query = dict(url.query.params)
+
+        # context_hook = dict
+        # params_hook = dict
+
+        request = models.Request \
         (
-            ** \
-            {
-                ** attr.asdict(self),
-                ** kwargs,
-            },
+            path    = path,
+            router  = self,
+            params  = models.Context(kwargs = query),
+            context = models.Context(args, kwargs),
         )
 
-    def render(self) -> str:
-        return self.path.format(** self.params)
+        return self.handle(request)
 
-@attr.s(kw_only = True)
-class HttpRequest(Request):
-    method: str = attr.ib()
+    def __getitem__(self, path):
+        return self.resolve(path)
 
-@attr.s
-class Target(object):
-    data: t.Any = attr.ib(default = None)
-
-    def __call__(self, request: t.Optional[Request] = None) -> t.Any:
-        return self.data
-
-@attr.s(auto_attribs = True)
-class Route(object):
-    path:   types.Path = attr.ib(converter = types.Path)
-    target: t.Callable
-
-@attr.s
-class Router(object):
-    routes:         List[Route] = attr.ib(default = attr.Factory(list))
-    case_sensitive: bool        = attr.ib(default = False)
-
-    # Note: Make sure doesn't collide with .middleware
-    # _middleware: List[t.Callable] = attr.ib(default = attr.Factory(list))
-    _middleware: List[t.Callable] = attr.ib(default = [middleware.parametrise])
-
-    request_class: type = attr.ib(default = Request)
-
-    def __call__(self, routable: t.Union[str, Request], **kwargs):
-        path = routable if isinstance(routable, str) else routable.render()
-
-        route = self.resolve(path)
-
-        request = routable if isinstance(routable, Request) else self.build(route, path, **kwargs)
-
-        return self.dispatch(route, request)
-
-    def dispatch(self, route, request):
-        call_next = route.target
-
-        # Note: Should this be reversed?
-        # for middleware in reversed(self._middleware):
-        for middleware in self._middleware:
-            call_next = functools.partial(middleware, call_next = call_next)
-
-        return call_next(request)
-
-    def build(self, route, path: str, **kwargs):
-        return self.request_class \
+    def __setitem__(self, path, target):
+        self.routes.append \
         (
-            # path   = path,
-            path   = route.path,
-            params = \
+            Route \
             (
-                params
-                if (params := route.path.parse(path, case_sensitive = self.case_sensitive)) is None
-                else addict.Dict(params)
+                path   = path,
+                target = target,
             ),
-            **kwargs,
         )
 
-    def __getattr__(self, path: str):
-        if path.startswith('_'):
-            raise AttributeError
+    def handle(self, request):
+        def proc(request):
+            route = self.resolve(request.path)
 
-        return self.route(path)
+            return route.target(*request.params.args, **request.params.kwargs)
 
-    def resolve(self, path: str):
+        target = self.middleware.compose(proc)
+
+        return target(request)
+
+    def resolve(self, path):
         for route in self.routes:
-            if route.path.matches(path, case_sensitive = self.case_sensitive):
+            if route.matches(path):
                 return route
 
-        raise errors.NotFound(path)
+        raise errors.NotFound
 
-    def route(self, *paths: str):
-        def decorator(target: t.Any = None):
-            for path in paths:
-                if isinstance(target, self.__class__):
-                    for route in target.routes:
-                        self.routes.append \
-                        (
-                            Route \
-                            (
-                                path   = path + route.path,
-                                target = route.target,
-                            ),
-                        )
-                else:
-                    self.routes.append \
-                    (
-                        Route \
-                        (
-                            path   = path,
-                            target = target,
-                        ),
-                    )
+    def route(self, *paths: str, **kwargs):
+        new_routes = \
+        [
+            Route \
+            (
+                path   = path,
+                target = Missing,
+            )
+            for path in paths
+        ]
+
+        self.routes += new_routes
+
+        def decorator(target):
+            routes = label.get_labels(target).get(sentinels.Route, ())
+
+            label.apply_label(target, sentinels.Route, list(itertools.chain(new_routes, routes)))
+
+            for route in new_routes:
+                route.target = target
 
             return target
 
         return decorator
 
-    def middleware(self, func: t.Callable):
-        self._middleware.append(func)
+def route(*paths: str, **kwargs):
+    routes = [Route(path, **kwargs) for path in paths]
+
+    def decorator(func):
+        labels = label.get_labels(func)
+
+        labels.setdefault(sentinels.Route, [])
+
+        labels[sentinels.Route] += routes
 
         return func
 
-@attr.s
-class HttpMethodRouter(Router):
-    _middleware: List[t.Callable] = attr.ib(default = attr.Factory(list))
+    return decorator
 
-    def __call__(self, routable: t.Union[str, HttpRequest], **kwargs):
-        method = routable if isinstance(routable, str) else routable.method
+def mount(*paths: str):
+    def decorator(func):
+        mounts = \
+        [
+            * [models.Mount(path) for path in paths],
+            * label.get_labels(func).get(sentinels.Mount, ())
+        ]
 
-        return super().__call__(method)
+        return label.label(sentinels.Mount, mounts)(func)
 
-    def resolve(self, path: str):
-        try:
-            return super().resolve(path)
-        except errors.NotFound:
-            raise errors.MethodNotAllowed(path) from None
+    return decorator
 
-@attr.s
-class HttpRoute(Route):
-    target: HttpMethodRouter = attr.ib(default = attr.Factory(HttpMethodRouter))
+middleware = label.label(sentinels.Middleware)
 
-    def __call__(self, method: t.Optional[str] = None):
-        return self.target(method)
+def get_routes(obj, *, sep: str = ''): # TODO: Add 'depth' param? (e.g. whether to check attributes)
+    labels = label.get_labels(obj)
 
-    @property
-    def any(self):
-        return self.target.route(str(dict()))
-
-    def __getattr__(self, method: str):
-        return getattr(self.target, method)
-
-@attr.s
-class HttpRouter(Router):
-    routes: t.List[HttpRoute] = attr.ib(default = attr.Factory(list))
-
-    # def __call__(self, path: str, method: Optional[str] = None):
-    #     route = self.resolve(path)
-    #
-    #     route_method = route.resolve(method)
-    #
-    #     request = self.build \
-    #     (
-    #         route,
-    #         path   = path,
-    #         method = method,
-    #     )
-    #
-    #     return route_method.target(request)
-
-    request_class: type = attr.ib(default = HttpRequest)
-
-    def dispatch(self, route, request):
-        sub_route = route.target.resolve(request.method)
-
-        return super().dispatch(sub_route, request)
-
-    # def build(self, route, path: str, method: str):
-    #     return HttpRequest \
-    #     (
-    #         path   = path,
-    #         params = params if (params := route.path.parse(path)) is None else addict.Dict(params),
-    #         method = method,
-    #     )
-
-    def __getattr__(self, method: str):
-        if method.startswith('_'):
-            raise AttributeError
-
-        return functools.partial(self.route, methods={method})
-
-    def any(self, *paths: str):
-        return self.route(*paths, methods = None)
-
-    def route(self, *paths: str, methods: Optional[Set[str]] = None):
-        def decorator(target: t.Any = None):
-            for path in paths:
-                route = HttpRoute \
+    if sentinels.Route in labels:
+        return \
+        [
+            Route \
+            (
+                path = \
                 (
-                    path = path,
+                    sep.join \
+                    (
+                        [
+                            * [mount.path for mount in labels[sentinels.Mount]],
+                            route.path,
+                        ],
+                    )
+                    if sentinels.Mount in labels
+                    else route.path
+                ),
+                target = obj,
+            )
+            for route in labels[sentinels.Route]
+        ]
+
+    return \
+    [
+        Route \
+        (
+            path = \
+            (
+                sep.join \
+                (
+                    [
+                        * [mount.path for mount in labels[sentinels.Mount]],
+                        route.path,
+                    ],
                 )
+                if sentinels.Mount in label.get_labels(value)
+                else route.path
+            ),
+            target = value,
+        )
+        for key, value in inspect.getmembers(obj)
+        for route in label.get_labels(value).get(sentinels.Route, ())
+    ]
 
-                for method in methods or (str(dict()),):
-                    route.target.route(method)(target)
+def get_middleware(obj): # TODO: Add 'depth' param? (e.g. whether to check attributes)
+    if sentinels.Middleware in label.get_labels(obj):
+        return [obj]
 
-                self.routes.append(route)
+    return \
+    [
+        value
+        for key, value in inspect.getmembers(obj)
+        if sentinels.Middleware in label.get_labels(value)
+    ]
 
-            return target
+def router(*objs, sep: str = ''):
+    middleware = Middleware()
 
-        return decorator
+    for obj in objs:
+        for m in get_middleware(obj):
+            middleware.append(m)
 
-class InverseRouter(mixins.InverseRouterMixin, Router): pass
-class InverseHttpRouter(mixins.InverseRouterMixin, HttpRouter): pass
+    return Router \
+    (
+        routes = \
+        [
+            route
+            for obj in objs
+            for route in ([obj] if isinstance(obj, Route) else get_routes(obj, sep=sep))
+        ],
+        middleware = middleware,
+    )

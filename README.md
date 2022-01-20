@@ -1,4 +1,7 @@
 # routing
+Routing for Python
+
+(Example use cases: cli, http server)
 
 ## Example: Basic Routing
 
