@@ -1,20 +1,49 @@
 import routing
-import dataclasses
+import routing.api
+import annotate
+import mediate
 
-from routing import labels
-
-'''
-Notes:
-    * Just focus on URIs? This was can benefit from passing parameters?
-        - No, that should be an extension on top of this library
-'''
+"""
+router = routing.Router()
 
 
-@labels.route('/foo', '/bar')
-@labels.mount('/mount')
-def foo():
-    ...
+@router.middleware
+def middleware(call_next, request):
+    print("middleware:", request)
 
-@labels.middleware
-def bar():
-    ...
+    return call_next(request)
+
+
+@router.route("/say")
+def say(message: str):
+    print(message)
+
+
+router("/mount/say", "Hello, World")
+"""
+
+
+class Counter:
+    count: int = 0
+
+    @routing.middleware
+    def log(self, call_next, request):
+        print(request)
+
+        return call_next(request)
+
+    @routing.route("/add")
+    def add(self, amount: int = 1) -> None:
+        self.count += 1
+
+    @routing.route("/get")
+    def get(self) -> int:
+        return self.count
+
+
+counter: Counter = Counter()
+
+routes = routing.api.get_routes(counter)
+middleware = routing.api.get_middleware(counter)
+
+router = routing.api.router(counter)

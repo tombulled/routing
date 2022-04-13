@@ -1,23 +1,38 @@
 import dataclasses
-import typing
-
-@dataclasses.dataclass
-class Context:
-    args:   tuple = dataclasses.field(default_factory = tuple)
-    kwargs: dict  = dataclasses.field(default_factory = dict)
+from typing import Any, Callable, Optional, TypeVar
+import parse
+import arguments
 
 @dataclasses.dataclass
 class Mount:
-    path: typing.Any
+    path: str
+    # sep: str = ''
+    suffix: bool = False
+
+    # def apply(self, path: str, /) -> str:
+    #     """
+    #     Apply the mount to a given path
+    #     """
+
+    #     return self.sep.join((path, self.path) if self.suffix else (self.path, path))
+
 
 @dataclasses.dataclass
 class Request:
-    path:   str
-    # router: 'Router'
-    params: Context
-    # context: Context
+    path: str
+    args: arguments.Arguments
 
-@dataclasses.dataclass
+
+@dataclasses.dataclass(eq=True)
 class Route:
     path: str
-    target: typing.Any = None
+    target: Callable[..., Any] = lambda *args, **kwargs: None
+
+    def match(self, path: str) -> Optional[arguments.Arguments]:
+        result: Optional[parse.Result] = parse.parse(self.path, path)
+
+        if result:
+            return arguments.Arguments(*result.fixed, **result.named)
+
+    def matches(self, path: str) -> bool:
+        return self.match(path) is not None

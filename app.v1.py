@@ -9,7 +9,7 @@ import math
 import label
 import sentinel
 
-'''
+"""
 Notes:
     * Offload path segment concatenation to 'concatenate'
         * Defaults:
@@ -63,16 +63,16 @@ Examples of non-string paths: (int, float, list, enum)
 
         @route(0b10)
         def handle_2(...): ...
-'''
+"""
 
 import collections
 import pathlib
 import furl
 
-_p = '/foo/{bar}'
-_p2 = 'go {direction}'
+_p = "/foo/{bar}"
+_p2 = "go {direction}"
 
-'''
+"""
 How can params be specified for non-string types?
 0b10{seg}11 ??
 Use a mask? (uses AND)
@@ -87,16 +87,22 @@ class Foo:
     def ...:
         ...
 
-'''
+"""
+
 
 @mount(0b10)
 class Foo:
-    @route(0b00, mask=OR, size=2) # NOTE: Use a default path of 0b0 (and '/' for string-based?)
-    def foo(): ...
+    @route(
+        0b00, mask=OR, size=2
+    )  # NOTE: Use a default path of 0b0 (and '/' for string-based?)
+    def foo():
+        ...
+
 
 p = routing.types.Path(_p)
 p2 = pathlib.Path(_p)
 p3 = furl.Path(_p)
+
 
 @dataclasses.dataclass
 class Counter:
@@ -105,43 +111,53 @@ class Counter:
     @staticmethod
     @routing.middleware
     def log(call_next, request):
-        print(f'[Log] Request: {request}')
+        print(f"[Log] Request: {request}")
         response = call_next(request)
-        print(f'[Log] Response: {response}')
+        print(f"[Log] Response: {response}")
         return response
 
-    @routing.route('/add/{amount:d}')
+    @routing.route("/add/{amount:d}")
     def add(self, amount: int, multiplier: int = 1) -> None:
         self.count += amount * multiplier
 
-    @routing.route('/get')
+    @routing.route("/get")
     def get(self) -> int:
         return self.count
 
+
 counter = Counter(50)
 
-@routing.mount('/dangerous')
-@routing.route('/reset')
+
+@routing.mount("/dangerous")
+@routing.route("/reset")
 def reset():
     counter.count = 0
 
+
 router = routing.router(counter, reset)
 
-@routing.mount('/a')
-@routing.mount('/b', '/c')
-@routing.route('/foo')
-@routing.route('/bar')
-def foo(): return 'foo'
+
+@routing.mount("/a")
+@routing.mount("/b", "/c")
+@routing.route("/foo")
+@routing.route("/bar")
+def foo():
+    return "foo"
+
 
 r = routing.Router()
 
-@r.route('/bar')
-def bar(): return 'bar'
+
+@r.route("/bar")
+def bar():
+    return "bar"
+
 
 @r.middleware
 def process(call_next, request):
     return call_next(request)
 
-r['a'] = 1
 
-router('/add/5?multiplier=2', method='post')
+r["a"] = 1
+
+router("/add/5?multiplier=2", method="post")

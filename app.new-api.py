@@ -7,7 +7,7 @@ import inspect
 import label
 import sentinel
 
-'''
+"""
 Supported path types:
     int (concatenates)
     str (concatenates)
@@ -55,7 +55,7 @@ class Application:
     db: Redis = autowired()
 
 E.g. with innertube, use a settings.toml
-'''
+"""
 
 # GLOBAL_ROUTER = Router()
 #
@@ -88,31 +88,40 @@ E.g. with innertube, use a settings.toml
 #     def login(self, username: str, password: str) -> None:
 #         print(f'Login: {username!r}, {password!r}')
 
+
 @dataclasses.dataclass
 class Counter:
     count: int = 0
 
-    @routing.route('/add', '/increment')
+    @routing.route("/add", "/increment")
     def add(self) -> None:
         self.count += 1
 
-    @routing.route('/get', '/value')
+    @routing.route("/get", "/value")
     def get(self) -> int:
         return self.count
 
+
 router = routing.router(Counter(50))
 
-@routing.route('/foo')
-def foo(): return 'foo'
+
+@routing.route("/foo")
+def foo():
+    return "foo"
+
 
 r = routing.Router()
 
-@r.route('/bar')
-def bar(): return 'bar'
+
+@r.route("/bar")
+def bar():
+    return "bar"
+
 
 @r.middleware
 def process(call_next):
     return call_next()
+
 
 # @routing.mount('/api')
 # @routing.router

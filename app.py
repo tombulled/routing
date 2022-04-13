@@ -1,6 +1,6 @@
 import routing
 
-'''
+"""
 TODO:
     * Implement <Mount>?
         * What about a suffix mount???
@@ -51,9 +51,9 @@ TODO:
     * Only allow one path for inverse routers?
     * Add example for custom routers?
     * Ensure `parse` plays nicely with `enums`
-'''
+"""
 
-'''
+"""
 Ideal API:
 
 # Http Router:
@@ -78,7 +78,7 @@ def login(request, *, username: str, password: str):
     )
 
 d = router('/login', method='post')(username='sam', password='bob')
-'''
+"""
 
 # router = routing.Router()
 
@@ -108,11 +108,13 @@ d = router('/login', method='post')(username='sam', password='bob')
 #
 # br('get')()
 
-api      = routing.BaseRouter()
+api = routing.BaseRouter()
 complete = routing.BaseRouter()
 
-@complete.route('/search')
-def complete_search(q: str):
-    print(f'complete_search({q!r})')
 
-api.route('/complete')(complete)
+@complete.route("/search")
+def complete_search(q: str):
+    print(f"complete_search({q!r})")
+
+
+api.route("/complete")(complete)

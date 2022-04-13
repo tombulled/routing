@@ -20,31 +20,37 @@ from . import sentinels
 # Targets can also be anything
 # ^ This is fine, however decorators only work for functions/classes
 
+
 @dataclasses.dataclass
 class Context:
-    args:   tuple
+    args: tuple
     kwargs: dict
+
 
 @dataclasses.dataclass
 class Request:
-    path:   typing.Any
+    path: typing.Any
     context: Context
+
 
 @dataclasses.dataclass
 class Route:
-    path:   typing.Any
+    path: typing.Any
     target: typing.Any = None
 
     def __repr__(self) -> str:
-        return f'{type(self).__name__}({self.path!r})'
+        return f"{type(self).__name__}({self.path!r})"
 
     def matches(self, path) -> bool:
-        return self.path == path # Crude check for now
+        return self.path == path  # Crude check for now
+
 
 @dataclasses.dataclass
 class Router:
-    routes: typing.List[Route] = dataclasses.field(default_factory = list)
-    middleware: mediate.Middleware = dataclasses.field(default_factory = mediate.Middleware)
+    routes: typing.List[Route] = dataclasses.field(default_factory=list)
+    middleware: mediate.Middleware = dataclasses.field(
+        default_factory=mediate.Middleware
+    )
 
     def __call__(self, path, *args, **kwargs):
         request = Request(path, Context(args, kwargs))
@@ -55,12 +61,10 @@ class Router:
         return self.resolve(path)
 
     def __setitem__(self, path, target):
-        self.routes.append \
-        (
-            Route \
-            (
-                path   = path,
-                target = target,
+        self.routes.append(
+            Route(
+                path=path,
+                target=target,
             ),
         )
 
@@ -77,12 +81,10 @@ class Router:
         raise errors.NotFound
 
     def route(self, *paths: str, **kwargs):
-        new_routes = \
-        [
-            Route \
-            (
-                path   = path,
-                target = sentinel.Missing,
+        new_routes = [
+            Route(
+                path=path,
+                target=sentinel.Missing,
             )
             for path in paths
         ]
@@ -92,7 +94,9 @@ class Router:
         def decorator(target):
             routes = label.get_labels(target).get(sentinels.Route, ())
 
-            label.apply_label(target, sentinels.Route, list(itertools.chain(new_routes, routes)))
+            label.apply_label(
+                target, sentinels.Route, list(itertools.chain(new_routes, routes))
+            )
 
             for route in new_routes:
                 route.target = target
@@ -101,51 +105,48 @@ class Router:
 
         return decorator
 
+
 def route(*paths: str, **kwargs):
     def decorator(func):
-        routes = \
-        [
-            * [Route(path, **kwargs) for path in paths],
-            * label.get_labels(func).get(sentinels.Route, ())
+        routes = [
+            *[Route(path, **kwargs) for path in paths],
+            *label.get_labels(func).get(sentinels.Route, ()),
         ]
 
         return label.label(sentinels.Route, routes)(func)
 
     return decorator
 
-def get_routes(obj): # TODO: Add 'depth' param? (e.g. whether to check attributes)
+
+def get_routes(obj):  # TODO: Add 'depth' param? (e.g. whether to check attributes)
     if sentinels.Route in label.get_labels(obj):
-        return \
-        [
-            Route \
-            (
-                path   = route.path,
-                target = obj,
+        return [
+            Route(
+                path=route.path,
+                target=obj,
             )
             for route in label.get_labels(obj)[sentinels.Route]
         ]
 
-    return \
-    [
-        Route \
-        (
-            path   = route.path,
-            target = value,
+    return [
+        Route(
+            path=route.path,
+            target=value,
         )
         for key, value in inspect.getmembers(obj)
         for route in label.get_labels(value).get(sentinels.Route, ())
     ]
 
+
 def router(*objs):
-    return Router \
-    (
-        routes = \
-        [
+    return Router(
+        routes=[
             route
             for obj in objs
             for route in ([obj] if isinstance(obj, Route) else get_routes(obj))
         ],
     )
+
 
 # def route(*paths, **state):
 #     frame = inspect.currentframe()

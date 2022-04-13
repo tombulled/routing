@@ -10,10 +10,10 @@ class Path:
     path: str
 
     def __repr__(self) -> str:
-        return f'{type(self).__name__}({self.path!r})'
+        return f"{type(self).__name__}({self.path!r})"
 
-    def __truediv__(self, rhs) -> 'Path':
-        print('div:', self, rhs)
+    def __truediv__(self, rhs) -> "Path":
+        print("div:", self, rhs)
 
     # parent, parents, join, match, parts
 
