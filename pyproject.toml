@@ -1,14 +1,16 @@
 [tool.poetry]
 name = "routing"
-version = "0.1.0"
-description = ""
+version = "0.1.1"
+description = "Routing for Python"
 authors = ["Tom Bulled <26026015+tombulled@users.noreply.github.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.8"
-
-[tool.poetry.dev-dependencies]
-pytest = "^5.2"
+concatenate = "^0.1.2"
+arguments = {git = "https://github.com/tombulled/arguments.git", rev = "main"}
+annotate = {git = "https://github.com/tombulled/annotate.git", rev = "main"}
+parse = "^1.19.0"
+sentinel = {git = "https://github.com/tombulled/sentinel.git", rev = "main"}
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
