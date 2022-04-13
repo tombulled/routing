@@ -7,7 +7,6 @@ import mediate
 from . import models, routers, sentinels
 
 
-# TODO: Add 'depth' param? (e.g. whether to check attributes)
 def get_routes(obj, *, sep: str = ""):
     annotations = annotate.get_annotations(obj)
 
@@ -23,7 +22,6 @@ def get_routes(obj, *, sep: str = ""):
     ]
 
 
-# TODO: Add 'depth' param? (e.g. whether to check attributes)
 def get_middleware(obj):
     if sentinels.Middleware in annotate.get_annotations(obj):
         return [obj]
