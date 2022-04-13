@@ -1,114 +1,72 @@
 # routing
 Routing for Python
 
-(Example use cases: cli, http server)
+## Example: Basic
+```python
+import routing
 
-## Example: Basic Routing
+router = routing.Router()
 
-### Implementation:
+@router.route('hello')
+def hello():
+    print('Hello!')
+```
+
+```python
+>>> router('hello')
+Hello!
+```
+
+## Example: Passing Arguments
+```python
+import routing
+
+router = routing.Router()
+
+@router.route('say')
+def say(message):
+    print(message)
+```
+
+```python
+>>> router('say', 'Hello, World')
+Hello, World
+```
+
+## Example: Path Parameters
 ```python
 import routing
 
 router = routing.Router()
 
 @router.route('turn {direction}')
-def turn(direction: str):
-    return f'Turn: {direction}'
+def turn(direction):
+    print(f'Turning: {direction}')
 ```
 
-### Usage:
 ```python
 >>> router('turn left')
-'Turn: left'
->>>
+Turning: left
 ```
 
-<br>
-
-## Example: Basic HTTP Routing
-
-### Implementation:
-```python
-import routing
-
-router = routing.HttpRouter()
-
-@router.post('/deposit/{amount:d}')
-def deposit(amount: int):
-    return f'Deposit: {amount}'
-```
-
-### Usage:
-```python
->>> router('/deposit/123', method='post')
-'Deposit: 123'
->>>
-```
-
-<br>
-
-## Example: Advanced Routing
-
-### Implementation:
+## Example: Middleware
 ```python
 import routing
 
 router = routing.Router()
 
 @router.middleware
-def negate(request, call_next):
-    request.params.adjective = f'not {request.params.adjective}'
+def only_eat_pizza(call_next, request):
+    request.args = routing.Arguments('pizza')
 
     return call_next(request)
 
-@router.route('declare {name} as {adjective}')
-def declare(name: str, adjective: str):
-    return f'Declaration: {name} is {adjective}'
+@router.route('eat {food}')
+def eat(food):
+    print(f'Eating: {food}')
 ```
 
-### Usage:
 ```python
->>> router('declare judith as awesome')
-'Declaration: judith is not awesome'
->>>
-```
-
-<br>
-
-## Example: Inverse Basic Routing
-
-### Implementation:
-```python
-import routing
-
-router = routing.InverseRouter()
-
-router.route('turn {direction}')()
-```
-
-### Usage:
-```python
->>> router('turn {direction}')(direction = 'right')
-Request(path='turn {direction}', params={'direction': 'right'})
->>>
-```
-
-<br>
-
-## Example: Inverse HTTP Routing
-
-### Implementation:
-```python
-import routing
-
-router = routing.InverseHttpRouter()
-
-router.get('/hello/{name}')()
-```
-
-### Usage:
-```python
->>> router('/hello/{name}', method='get')(name = 'sam')
-HttpRequest(path='/hello/{name}', params={'name': 'sam'}, method='get')
->>>
+>>> router('eat vegetables') 
+Eating: pizza
 ```

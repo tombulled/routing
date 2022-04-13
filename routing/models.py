@@ -1,20 +1,14 @@
 import dataclasses
-from typing import Any, Callable, Optional, TypeVar
-import parse
+from typing import Any, Callable, Optional
+
 import arguments
+import parse
+
 
 @dataclasses.dataclass
 class Mount:
     path: str
-    # sep: str = ''
     suffix: bool = False
-
-    # def apply(self, path: str, /) -> str:
-    #     """
-    #     Apply the mount to a given path
-    #     """
-
-    #     return self.sep.join((path, self.path) if self.suffix else (self.path, path))
 
 
 @dataclasses.dataclass

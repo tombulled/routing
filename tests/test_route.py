@@ -23,6 +23,7 @@ def test_match_no_args() -> None:
     assert route.match("foo") == arguments.Arguments()
     assert route.match("bar") is None
 
+
 def test_match_args() -> None:
     route: Route = Route("foo {} {kwarg}")
 

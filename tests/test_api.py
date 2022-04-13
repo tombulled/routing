@@ -1,6 +1,7 @@
 import routing
 from routing import api
 
+
 def test_get_middleware() -> None:
     @routing.middleware
     def function(*args, **kwargs) -> None:
