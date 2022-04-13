@@ -26,4 +26,4 @@ def test_route(router: Router):
     route: Route = Route(path="/foo", target=foo)
 
     assert router.routes == [route]
-    assert annotate.get_annotations(route).get(routing.sentinels.Route) == [route]
+    assert annotate.get_annotations(foo).get(routing.sentinels.Route) == [route]
