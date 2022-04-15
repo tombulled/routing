@@ -57,7 +57,7 @@ def test_get_middleware() -> None:
 
 
 def test_router() -> None:
-    @routing.route('route_1')
+    @routing.route("route_1")
     def route_1(*args: Any, **kwargs: Any) -> None:
         ...
 
@@ -67,7 +67,7 @@ def test_router() -> None:
 
     sub_router: routing.Router = routing.Router()
 
-    @sub_router.route('route_2')
+    @sub_router.route("route_2")
     def route_2(*args: Any, **kwargs: Any) -> None:
         ...
 

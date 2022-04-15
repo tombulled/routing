@@ -88,7 +88,9 @@ class Router:
         def wrapper(obj: T, /) -> T:
             mount: models.Mount = models.Mount(*args, **kwargs)
 
-            routes: List[models.Route] = annotate.get_annotations(obj).get(sentinels.Route, [])
+            routes: List[models.Route] = annotate.get_annotations(obj).get(
+                sentinels.Route, []
+            )
 
             route: models.Route
             for route in self.routes:
