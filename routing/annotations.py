@@ -1,10 +1,12 @@
+from typing import Any
+
 import annotate
 
 from . import models, sentinels
 
 
 @annotate.annotation(key=sentinels.Route, repeatable=True)
-def route(*args, **kwargs) -> models.Route:
+def route(*args: Any, **kwargs: Any) -> models.Route:
     return models.Route(*args, **kwargs)
 
 

@@ -1,5 +1,5 @@
 import dataclasses
-from typing import Any, List, TypeVar
+from typing import Any, Callable, List, TypeVar
 
 from . import models
 from . import errors
@@ -22,18 +22,18 @@ class Router:
     )
     separator: str = ""
 
-    def __call__(self, path, *args, **kwargs):
-        request = models.Request(
+    def __call__(self, path: str, *args: Any, **kwargs: Any) -> Any:
+        request: models.Request = models.Request(
             path=path,
             args=arguments.Arguments(*args, **kwargs),
         )
 
         return self.handle(request)
 
-    def __getitem__(self, path):
+    def __getitem__(self, path: str, /) -> models.Route:
         return self.resolve(path)
 
-    def __setitem__(self, path, target):
+    def __setitem__(self, path: str, target: str) -> None:
         self.routes.append(
             models.Route(
                 path=path,
@@ -41,38 +41,40 @@ class Router:
             ),
         )
 
-    def handle(self, request):
-        route = self.resolve(request.path)
+    def handle(self, request: models.Request) -> Any:
+        route: models.Route = self.resolve(request.path)
 
-        args = route.match(request.path)
+        args: arguments.Arguments = route.match(request.path)
 
-        request = dataclasses.replace(
+        request: models.Request = dataclasses.replace(
             request,
             args=arguments.Arguments(*args, *request.args.args, **request.args.kwargs),
         )
 
-        def process(request):
+        def process(request: models.Request) -> Any:
             return route.target(*request.args.args, **request.args.kwargs)
 
-        target = self.middlewares.compose(process)
+        target: Callable[[models.Request], Any] = self.middlewares.compose(process)
 
         return target(request)
 
-    def resolve(self, path):
+    def resolve(self, path: str) -> models.Route:
+        route: models.Route
         for route in self.routes:
             if route.matches(path):
                 return route
 
         raise errors.RouteNotFound(repr(path))
 
-    def route(self, *paths: str, **kwargs: Any):
+    def route(self, *paths: str, **kwargs: Any) -> Callable[[T], T]:
         def wrapper(obj: T, /) -> T:
+            path: str
             for path in paths:
-                route = models.Route(path, **kwargs, target=obj)
+                route: models.Route = models.Route(path, **kwargs, target=obj)
 
                 self.routes.append(dataclasses.replace(route))
 
-                annotation = annotate.Annotation(
+                annotation: annotate.Annotation = annotate.Annotation(
                     key=sentinels.Route, value=route, repeatable=True
                 )
 
@@ -82,12 +84,13 @@ class Router:
 
         return wrapper
 
-    def mount(self, *args, **kwargs):
+    def mount(self, *args, **kwargs) -> Callable[[T], T]:
         def wrapper(obj: T, /) -> T:
             mount: models.Mount = models.Mount(*args, **kwargs)
 
-            routes = annotate.get_annotations(obj)[sentinels.Route]
+            routes: List[models.Route] = annotate.get_annotations(obj).get(sentinels.Route, [])
 
+            route: models.Route
             for route in self.routes:
                 if route in routes:
                     route.path = self.separator.join(
