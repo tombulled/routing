@@ -1,7 +1,6 @@
 import pytest
 import annotate
-from routing import Router, Route
-import routing.sentinels
+from routing import Router, Route, Annotation
 
 
 @pytest.fixture
@@ -15,7 +14,7 @@ def test_middleware(router: Router):
         ...
 
     assert router.middlewares == [middleware]
-    assert routing.sentinels.Middleware in annotate.get_annotations(middleware)
+    assert Annotation.MIDDLEWARE in annotate.get_annotations(middleware)
 
 
 def test_route(router: Router):
@@ -26,4 +25,4 @@ def test_route(router: Router):
     route: Route = Route(path="/foo", target=foo)
 
     assert router.routes == [route]
-    assert annotate.get_annotations(foo).get(routing.sentinels.Route) == [route]
+    assert annotate.get_annotations(foo).get(Annotation.ROUTE) == [route]

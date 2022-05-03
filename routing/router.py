@@ -3,7 +3,7 @@ from typing import Any, Callable, List, TypeVar
 
 from . import models
 from . import errors
-from . import sentinels
+from . import enums
 from . import annotations
 
 import mediate
@@ -33,7 +33,7 @@ class Router:
     def __getitem__(self, path: str, /) -> models.Route:
         return self.resolve(path)
 
-    def __setitem__(self, path: str, target: str) -> None:
+    def __setitem__(self, path: str, target: Callable) -> None:
         self.routes.append(
             models.Route(
                 path=path,
@@ -46,12 +46,15 @@ class Router:
 
         args: arguments.Arguments = route.match(request.path)
 
-        request: models.Request = dataclasses.replace(
+        request = dataclasses.replace(
             request,
             args=arguments.Arguments(*args, *request.args.args, **request.args.kwargs),
         )
 
         def process(request: models.Request) -> Any:
+            if route.target is None:
+                return None
+
             return route.target(*request.args.args, **request.args.kwargs)
 
         target: Callable[[models.Request], Any] = self.middlewares.compose(process)
@@ -66,21 +69,21 @@ class Router:
 
         raise errors.RouteNotFound(repr(path))
 
-    def route(self, *paths: str, **kwargs: Any) -> Callable[[T], T]:
-        def wrapper(obj: T, /) -> T:
+    def route(self, *paths: str, **kwargs: Any) -> Callable[[Callable], Callable]:
+        def wrapper(target: Callable, /) -> Callable:
             path: str
             for path in paths:
-                route: models.Route = models.Route(path, **kwargs, target=obj)
+                route: models.Route = models.Route(path, **kwargs, target=target)
 
                 self.routes.append(dataclasses.replace(route))
 
                 annotation: annotate.Annotation = annotate.Annotation(
-                    key=sentinels.Route, value=route, repeatable=True
+                    key=enums.Annotation.ROUTE, value=route, repeatable=True
                 )
 
-                annotate.annotate(obj, annotation)
+                annotate.annotate(target, annotation)
 
-            return obj
+            return target
 
         return wrapper
 
@@ -89,17 +92,13 @@ class Router:
             mount: models.Mount = models.Mount(*args, **kwargs)
 
             routes: List[models.Route] = annotate.get_annotations(obj).get(
-                sentinels.Route, []
+                enums.Annotation.ROUTE, []
             )
 
             route: models.Route
             for route in self.routes:
                 if route in routes:
-                    route.path = self.separator.join(
-                        (route.path, mount.path)
-                        if mount.suffix
-                        else (mount.path, route.path)
-                    )
+                    route.path = mount.apply(route.path, sep=self.separator)
 
             return obj
 
