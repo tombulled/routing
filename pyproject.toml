@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "routing"
-version = "0.1.3"
+version = "0.1.4"
 description = "Routing for Python"
 authors = ["Tom Bulled <26026015+tombulled@users.noreply.github.com>"]
 
