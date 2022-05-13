@@ -1,11 +1,12 @@
-import dataclasses
+from abc import ABC
+from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
+from arguments import Arguments
 
-import arguments
 import parse
 
 
-@dataclasses.dataclass
+@dataclass
 class Mount:
     path: str
     suffix: bool = False
@@ -14,22 +15,31 @@ class Mount:
         return sep.join((path, self.path) if self.suffix else (self.path, path))
 
 
-@dataclasses.dataclass
-class Request:
+@dataclass
+class AbstractRequest(ABC):
     path: str
-    args: arguments.Arguments
+    data: Any = None
 
 
-@dataclasses.dataclass(eq=True)
-class Route:
+class Request(AbstractRequest):
+    data: Arguments = field(default_factory=Arguments)
+
+
+@dataclass(eq=True)
+class AbstractRoute(ABC):
     path: str
     target: Optional[Callable[..., Any]] = None
 
-    def match(self, path: str) -> Optional[arguments.Arguments]:
+    def matches(self, path: str) -> bool:
+        return path == self.path
+
+
+class Route(AbstractRoute):
+    def match(self, path: str) -> Optional[Arguments]:
         result: Optional[parse.Result] = parse.parse(self.path, path)
 
         if result:
-            return arguments.Arguments(*result.fixed, **result.named)
+            return Arguments(*result.fixed, **result.named)
 
         return None
 
