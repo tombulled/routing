@@ -1,3 +1,4 @@
+from abc import ABC
 import dataclasses
 from typing import Any, Callable, Generic, List, Optional, TypeVar
 
@@ -17,7 +18,7 @@ RE = TypeVar("RE", bound=models.AbstractRequest)
 
 
 @dataclasses.dataclass
-class AbstractRouter(Generic[RO, RE]):
+class AbstractRouter(Generic[RO, RE], ABC):
     routes: List[RO] = dataclasses.field(default_factory=list)
     middlewares: mediate.Middleware = dataclasses.field(
         default_factory=mediate.Middleware
