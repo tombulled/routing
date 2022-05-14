@@ -1,4 +1,3 @@
-from abc import ABC, abstractmethod
 import dataclasses
 from typing import Any, Callable, Generic, List, Optional, TypeVar
 
@@ -12,38 +11,54 @@ from arguments import Arguments
 import annotate
 
 
-T = TypeVar("T")
+C = TypeVar("C", bound=Callable)
 RO = TypeVar("RO", bound=models.AbstractRoute)
 RE = TypeVar("RE", bound=models.AbstractRequest)
 
 
 @dataclasses.dataclass
-class AbstractRouter(Generic[RO, RE], ABC):
+class AbstractRouter(Generic[RO, RE]):
     routes: List[RO] = dataclasses.field(default_factory=list)
     middlewares: mediate.Middleware = dataclasses.field(
         default_factory=mediate.Middleware
     )
     separator: str = ""
 
-    @staticmethod
-    @abstractmethod
-    def build_request(path: str, *args: Any, **kwargs: Any) -> RE:
-        ...
+    def build_route_registrar(self, routes: List[RO]) -> Callable[[C], C]:
+        def wrapper(target: C, /) -> C:
+            route: RO
+            for route in routes:
+                route = dataclasses.replace(route, target=target)
 
-    @staticmethod
-    @abstractmethod
-    def build_route(path: str, *args: Any, **kwargs: Any) -> RO:
-        ...
+                self.routes.append(dataclasses.replace(route))
 
-    def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        return self.handle(self.build_request(*args, **kwargs))
+                annotation: annotate.Annotation = annotate.Annotation(
+                    key=enums.Annotation.ROUTE, value=route, repeatable=True
+                )
+
+                annotate.annotate(target, annotation)
+
+            return target
+
+        return wrapper
+
+    def build_mount_registrar(self, mount: models.Mount) -> Callable[[C], C]:
+        def wrapper(obj: C, /) -> C:
+            routes: List[RO] = annotate.get_annotations(obj).get(
+                enums.Annotation.ROUTE, []
+            )
+
+            route: RO
+            for route in self.routes:
+                if route in routes:
+                    route.path = mount.apply(route.path, sep=self.separator)
+
+            return obj
+
+        return wrapper
 
     def __getitem__(self, path: str, /) -> List[RO]:
-        return [
-            route
-            for route in self.routes
-            if route.matches(path)
-        ]
+        return [route for route in self.routes if route.matches(path)]
 
     def apply(self, route: RO, request: RE) -> Any:
         if route.target is None:
@@ -70,42 +85,12 @@ class AbstractRouter(Generic[RO, RE], ABC):
 
         return routes[0]
 
-    def route(self, *paths: str, **kwargs: Any) -> Callable[[Callable], Callable]:
-        def wrapper(target: Callable, /) -> Callable:
-            path: str
-            for path in paths:
-                route: RO = self.build_route(path, **kwargs, target=target)
+    def mount(self, *args, **kwargs) -> Callable[[C], C]:
+        mount: models.Mount = models.Mount(*args, **kwargs)
 
-                self.routes.append(dataclasses.replace(route))
+        return self.build_mount_registrar(mount)
 
-                annotation: annotate.Annotation = annotate.Annotation(
-                    key=enums.Annotation.ROUTE, value=route, repeatable=True
-                )
-
-                annotate.annotate(target, annotation)
-
-            return target
-
-        return wrapper
-
-    def mount(self, *args, **kwargs) -> Callable[[T], T]:
-        def wrapper(obj: T, /) -> T:
-            mount: models.Mount = models.Mount(*args, **kwargs)
-
-            routes: List[RO] = annotate.get_annotations(obj).get(
-                enums.Annotation.ROUTE, []
-            )
-
-            route: RO
-            for route in self.routes:
-                if route in routes:
-                    route.path = mount.apply(route.path, sep=self.separator)
-
-            return obj
-
-        return wrapper
-
-    def middleware(self, obj: T) -> T:
+    def middleware(self, obj: C) -> C:
         annotations.middleware(obj)
 
         self.middlewares.append(obj)
@@ -117,15 +102,10 @@ class AbstractRouter(Generic[RO, RE], ABC):
 class Router(AbstractRouter[models.Route, models.Request]):
     routes: List[models.Route] = dataclasses.field(default_factory=list)
 
-    @staticmethod
-    def build_request(path: str, *args: Any, **kwargs: Any) -> models.Request:
-        return models.Request(path=path, data=Arguments(*args, **kwargs))
+    def __call__(self, path: str, *args: Any, **kwargs: Any) -> Any:
+        return self.handle(models.Request(path, *args, **kwargs))
 
-    @staticmethod
-    def build_route(path: str, *args: Any, **kwargs: Any) -> models.Route:
-        return models.Route(path, *args, **kwargs)
-
-    def apply(self, route: RO, request: RE) -> Any:
+    def apply(self, route: models.Route, request: models.Request) -> Any:
         if route.target is None:
             return None
 
@@ -138,3 +118,8 @@ class Router(AbstractRouter[models.Route, models.Request]):
             )
 
         return route.target(*request.data.args, **request.data.kwargs)
+
+    def route(self, path: str) -> Callable[[C], C]:
+        route: models.Route = models.Route(path=path, target=None)
+
+        return self.build_route_registrar([route])
